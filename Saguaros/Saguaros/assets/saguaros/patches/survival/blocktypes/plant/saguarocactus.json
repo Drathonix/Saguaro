@@ -5,5 +5,12 @@
     "op": "addmerge",
     "path": "/entityClass",
     "value": "SaguaroCactus"
+  },
+  {
+    "enabled": true,
+    "file": "game:blocktypes/plant/saguarocactus.json",
+    "op": "replace",
+    "path": "/behaviorsByType/*-topripe/0/name",
+    "value": "SaguaroHarvestable"
   }
 ]

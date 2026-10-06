@@ -1,4 +1,4 @@
 <Solution>
   <Project Path="Saguaros/CakeBuild/CakeBuild.csproj" />
-  <Project Path="Saguaros/Saguaros/Saguaros.csproj" />
+  <Project Path="Saguaros/Saguaros/Saguaro.csproj" />
 </Solution>

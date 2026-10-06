@@ -89,32 +89,17 @@ public class SaguaroHarvestableBehavior : BlockBehaviorHarvestable
                 world.Api.Event.PushEvent("onitemcollected", data);
             }
         });
-        if (harvestedBlock != null)
+        BlockEntity be = world.BlockAccessor.GetBlockEntity(blockSel.Position);
+        if(be == null)
         {
-            if (!exchangeBlock)
-            {
-                world.BlockAccessor.SetBlock(harvestedBlock.BlockId, blockSel.Position);
-                if (world.BlockAccessor.GetBlockEntity(blockSel.Position) is BlockEntitySaguaro saguaro)
-                {
-                    saguaro.onHarvested(world);
-                }
-            }
-            else
-            {
-                world.BlockAccessor.ExchangeBlock(harvestedBlock.BlockId, blockSel.Position);
-                BlockEntity be = world.BlockAccessor.GetBlockEntity(blockSel.Position);
-                if (be == null)
-                {
-                    world.BlockAccessor.SpawnBlockEntity("SaguaroCactus", blockSel.Position);
-                    be = world.BlockAccessor.GetBlockEntity(blockSel.Position);
-                }
-                if (be is BlockEntitySaguaro saguaro)
-                {
-                    saguaro.onHarvested(world);
-                }
-            }
+           world.BlockAccessor.SpawnBlockEntity("SaguaroCactus",blockSel.Position);
+            be = world.BlockAccessor.GetBlockEntity(blockSel.Position);
         }
-
+        if (be is BlockEntitySaguaro saguaro)
+        {
+            saguaro.onHarvested(world);
+        }
+        
         if (Tool.HasValue)
         {
             ItemSlot activeHotbarSlot = byPlayer.InventoryManager.ActiveHotbarSlot;

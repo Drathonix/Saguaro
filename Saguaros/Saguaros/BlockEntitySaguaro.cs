@@ -17,11 +17,9 @@ public class BlockEntitySaguaro: BlockEntity
     private double totalHoursTillGrowth = -1;
     private NormalRandom normalRandom;
     private long growListenerId;
-    private long ageYears = 0;
     private bool isTip = false;
     private double nextStuntTime = 0;
     private EnumSaguaroGrowthStage stage = EnumSaguaroGrowthStage.UNDETERMINED;
-
     private static Block? topEmpty;
     private static Block? topFlowering;
     private static Block? topRipe;
@@ -48,8 +46,6 @@ public class BlockEntitySaguaro: BlockEntity
         }
         normalRandom = new NormalRandom(api.World.Seed-(Pos.X*Pos.Y*Pos.Z)-(int)api.World.Calendar.TotalHours);
         growListenerId = this.RegisterGameTickListener(new Action<IWorldAccessor,BlockPos,float>(this.CheckGrow), 2000);
-
-
     }
 
     private float GrowthRateMod => this.Api.World.Config.GetString("saplingGrowthRate").ToFloat(1f);
@@ -79,22 +75,34 @@ public class BlockEntitySaguaro: BlockEntity
     private void DetermineGrowthStage(IWorldAccessor world)
     {
         int n = 1;
+        bool branchy = false;
         while(world.BlockAccessor.GetBlockBelow(Pos.Copy(), n) is BlockCactus)
         {
+            if(world.BlockAccessor.GetBlockBelow(Pos.Copy(), n).Id == branching!.Id)
+            {
+                branchy = true;
+            }
             n++;
         }
-        
-        if (n == 1)
+
+        if (branchy && n > 1)
         {
-            stage = EnumSaguaroGrowthStage.BUD;
+            stage = EnumSaguaroGrowthStage.BRANCHY;
         }
-        else if (n == 2)
+        else
         {
-            stage = EnumSaguaroGrowthStage.JUVENILE;
-        }
-        else if (n >= 3)
-        {
-            stage = EnumSaguaroGrowthStage.ADULT;
+            if (n == 1)
+            {
+                stage = EnumSaguaroGrowthStage.BUD;
+            }
+            else if (n == 2)
+            {
+                stage = EnumSaguaroGrowthStage.JUVENILE;
+            }
+            else if (n >= 3)
+            {
+                stage = EnumSaguaroGrowthStage.ADULT;
+            }
         }
         
 
@@ -120,7 +128,7 @@ public class BlockEntitySaguaro: BlockEntity
         }
     }
 
-    private bool TryPlace(IBlockAccessor blockAccessor, Block block, BlockPos pos)
+    private static bool TryPlace(IBlockAccessor blockAccessor, Block block, BlockPos pos)
     {
         Block b = blockAccessor.GetBlock(pos);
         if (b.IsReplacableBy(block))
@@ -130,22 +138,70 @@ public class BlockEntitySaguaro: BlockEntity
         }
         return false;
     }
+
+    private int GrowUp(IBlockAccessor blockAccessor, EnumSaguaroGrowthStage stage, int maxTimes=1)
+    {
+        if(maxTimes <= 0)
+        {
+            return 0;
+        }
+        BlockPos thisBlock = Pos.Copy();
+        BlockPos newCactus = thisBlock.Copy().Up();
+        if (TryPlace(blockAccessor, topEmpty!, Pos.Copy().Up()))
+        {
+            if (blockAccessor.GetBlockEntity(newCactus) is BlockEntitySaguaro saguaro)
+            {
+                isTip = false;
+                this.stage = stage;
+                saguaro.isTip = true;
+                saguaro.stage = stage;
+                saguaro.totalHoursTillGrowth = totalHoursTillGrowth + nextStageDaysRnd.nextFloat(1, Api.World.Rand) * 24.0D * GrowthRateMod;
+                if (blockAccessor.GetBlockId(thisBlock) != branching!.Id)
+                {
+                    blockAccessor.ExchangeBlock(segment!.Id, thisBlock);
+                }
+                return 1 + saguaro.GrowUp(blockAccessor, stage, maxTimes-1);
+            }
+        }
+        return 0;
+    }
+    private bool Stunted(IBlockAccessor blockAccessor)
+    {
+        BlockPos pos = Pos.Copy();
+        if (normalRandom.NextFloat() < 0.08F)
+        {
+            stage = EnumSaguaroGrowthStage.STUNTED;
+            while (blockAccessor.GetBlockEntity(Pos.Down()) is BlockEntitySaguaro saguaro)
+            {
+                saguaro.stage = EnumSaguaroGrowthStage.STUNTED;
+            }
+            return true;
+        }
+        return false;
+    }
     private bool Grow(IWorldAccessor world)
     {
         IBlockAccessor blockAccessor = world.BlockAccessor;
         if (stage == EnumSaguaroGrowthStage.BUD)
         {
-            stage = EnumSaguaroGrowthStage.YOUNG;
+            if (!Stunted(blockAccessor))
+            {
+                stage = EnumSaguaroGrowthStage.YOUNG;
+            }
         } else if(stage == EnumSaguaroGrowthStage.YOUNG)
         {
-            if (TryPlace(blockAccessor, topEmpty!, Pos.Copy().Up()))
+            // Transitions to juvenile only if successful.
+            if (!Stunted(blockAccessor))
             {
-                stage = EnumSaguaroGrowthStage.JUVENILE;
-                blockAccessor.ExchangeBlock(segment!.Id,Pos.Copy());
+                GrowUp(blockAccessor, EnumSaguaroGrowthStage.JUVENILE);
             }
         }
         else if (stage == EnumSaguaroGrowthStage.JUVENILE)
         {
+            if (Stunted(blockAccessor))
+            {
+                return true;
+            }
             stage = EnumSaguaroGrowthStage.ADULT;
             // 20% chance to not grow up at all.
             if (normalRandom.NextFloat() <= 0.8)
@@ -153,26 +209,10 @@ public class BlockEntitySaguaro: BlockEntity
                 // Grows at least 1 block, Chance to grow an additional 1-2 blocks.
                 // TODO: make this affected by environment and soil.
                 int size = (int)Math.Floor(normalRandom.NextFloat() * 1.25F) + (int)Math.Floor(normalRandom.NextFloat() * 1.1F) + 1;
-                for(int i = 1; i <= size; i++)
+                if(GrowUp(blockAccessor, EnumSaguaroGrowthStage.ADULT, size) == 0)
                 {
-                    if (TryPlace(blockAccessor,segment!,Pos.Copy().Up(i))){
-                        if (i == size)
-                        {
-                            blockAccessor.ExchangeBlock(topEmpty!.Id, Pos.Copy().Up(i));
-                        }
-                    }
-                    else
-                    {
-                        if (i == 1)
-                        {
-                            stage = EnumSaguaroGrowthStage.BRANCHY;
-                        }
-                        break;
-                    }
-                }
-                if(stage != EnumSaguaroGrowthStage.BRANCHY)
-                {
-                    blockAccessor.ExchangeBlock(segment!.Id, Pos.Copy());
+                    // Unable to grow due to an obstruction.
+                    stage = EnumSaguaroGrowthStage.BRANCHY;
                 }
             }
             else
@@ -184,11 +224,12 @@ public class BlockEntitySaguaro: BlockEntity
         {
             if (blockAccessor.GetBlockId(Pos.Copy()) == topFlowering!.Id)
             {
-                totalHoursTillGrowth = world.Calendar.TotalHours + (normalRandom.NextInt(8)+16) * GrowthRateMod;
                 blockAccessor.ExchangeBlock(topRipe!.Id, Pos.Copy());
+                UnregisterGameTickListener(growListenerId);
             }
-            else if (blockAccessor.GetBlockId(Pos.Copy()) != topRipe!.Id)
+            else
             {
+                totalHoursTillGrowth = totalHoursTillGrowth + (normalRandom.NextInt(16) + 32) * GrowthRateMod;
                 blockAccessor.ExchangeBlock(topFlowering!.Id, Pos.Copy());
                 if (stage != EnumSaguaroGrowthStage.BRANCHY)
                 {
@@ -207,7 +248,9 @@ public class BlockEntitySaguaro: BlockEntity
 
     public void onHarvested(IWorldAccessor world)
     {
-        totalHoursTillGrowth = world.Calendar.TotalHours + nextStageDaysRnd.nextFloat(1.5f, Api.World.Rand) * 24.0D * GrowthRateMod;
+        totalHoursTillGrowth = world.Calendar.TotalHours + nextStageDaysRnd.nextFloat(1f, Api.World.Rand) * 24.0D * GrowthRateMod;
+        growListenerId = RegisterGameTickListener(new Action<IWorldAccessor, BlockPos, float>(CheckGrow), 2000);
+        world.BlockAccessor.ExchangeBlock(topEmpty!.Id, Pos);
         MarkDirty();
     }
 
@@ -220,7 +263,7 @@ public class BlockEntitySaguaro: BlockEntity
             DetermineGrowthStage(world);
             MarkDirty();
         }
-        if (!isTip)
+        if (!isTip || stage == EnumSaguaroGrowthStage.STUNTED)
         {
             UnregisterGameTickListener(growListenerId);
             return;
@@ -238,15 +281,11 @@ public class BlockEntitySaguaro: BlockEntity
             }
             else if(timeHours >= totalHoursTillGrowth)
             {
-                timeHours -= totalHoursTillGrowth;
-                while (timeHours >= 0)
+                if (Grow(world))
                 {
-                    if (Grow(world))
-                    {
-                        totalHoursTillGrowth = timeHours + nextStageDaysRnd.nextFloat(1f, Api.World.Rand) * 24.0D * GrowthRateMod;
-                    }
-                    timeHours -= totalHoursTillGrowth;
+                    totalHoursTillGrowth = totalHoursTillGrowth + nextStageDaysRnd.nextFloat(1f, Api.World.Rand) * 24.0D * GrowthRateMod;
                 }
+                CheckGrow(world,pos,dt);
                 MarkDirty();
             }
         } else if(timeHours >= nextStuntTime) {
@@ -294,6 +333,7 @@ enum EnumSaguaroGrowthStage
     JUVENILE,
     // 3 blocks in size. Starts flowering ~30-70 yrs old.
     ADULT,
+    STUNTED,
     BRANCHY,
     UNDETERMINED
 }
