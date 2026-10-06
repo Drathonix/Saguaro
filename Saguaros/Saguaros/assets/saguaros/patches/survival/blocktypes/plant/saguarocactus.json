@@ -1,0 +1,9 @@
+[
+  {
+    "enabled": true,
+    "file": "game:blocktypes/plant/saguarocactus.json",
+    "op": "addmerge",
+    "path": "/entityClass",
+    "value": "SaguaroCactus"
+  }
+]
